@@ -1,0 +1,9 @@
+# store your local paths / API keys
+localpaths.py
+
+# cache
+**/.DS_Store
+__pycache__
+
+# log file
+crawler/log.txt
