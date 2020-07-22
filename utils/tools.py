@@ -46,6 +46,7 @@ def json_dump(json_obj, is_debug=False, is_print=True, indent=4):
     if not is_debug:
         with open(RESULTPATH, "w") as w_obj:
             json.dump(json_obj, w_obj, indent=indent)
+            w_obj.write("\n")
 
     if is_print:
         print(json.dumps(json_obj, indent=indent))

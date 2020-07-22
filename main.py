@@ -65,12 +65,12 @@ def main():
             try:
                 driver.crawl_history(symbol)
             except Exception as e:
-                tools.log(f"[{symbol}] Failure crawling history: {e}")
+                tools.log(f"[{symbol}] Failure crawling history: {e}", is_debug)
 
         try:
             driver.crawl_summary(symbol)
         except Exception as e:
-            tools.log(f"[{symbol}] Failure crawling summary: {e}")
+            tools.log(f"[{symbol}] Failure crawling summary: {e}", is_debug)
 
     driver.quit()
 
