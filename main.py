@@ -13,25 +13,27 @@ from utils import tools, DATADIR, PROFILEPATH
 
 def create_profile():
     """Merge .csv files in DATADIR and save to PROFILEPATH."""
-    cols = ["Symbol", "Name", "IPOyear", "Sector", "Industry"]
-    dfs = [(pd.read_csv(os.path.join(DATADIR, path_))[cols]
-                .assign(Exchange=path_.split(".")[0].upper()))
-           for path_ in ["amex.csv", "nasdaq.csv", "nyse.csv"]]
-    df = pd.concat(dfs, axis=0)
+    if not os.path.exists(PROFILEPATH) or is_override:
+        cols = ["Symbol", "Name", "IPOyear", "Sector", "Industry"]
+        dfs = [(pd.read_csv(os.path.join(DATADIR, path_))[cols]
+                    .assign(Exchange=path_.split(".")[0].upper()))
+               for path_ in ["amex.csv", "nasdaq.csv", "nyse.csv"]]
+        df = pd.concat(dfs, axis=0)
 
-    def process_symbol(symbol):
-        symbol = symbol.replace("^", "-P")
-        symbol = symbol.replace(".", "-")
-        return symbol
-    df["Symbol"] = df["Symbol"].apply(process_symbol)
-    df = df.loc[df["Symbol"].apply(lambda x: "~" not in x), :]
-    df.sort_values("Symbol").to_csv(PROFILEPATH, index=False) # save
+        def process_symbol(symbol):
+            symbol = symbol.replace("^", "-P")
+            symbol = symbol.replace(".", "-")
+            return symbol
+        df["Symbol"] = df["Symbol"].apply(process_symbol)
+        df = df.loc[df["Symbol"].apply(lambda x: "~" not in x), :]
+        df.sort_values("Symbol").to_csv(PROFILEPATH, index=False) # save
 
 # switches
 is_init = False
 is_debug = False # run with first 5 symbols
 is_test = False # run with k randomly selected symbols
 is_schedule = True
+is_override = False
 for sarg in sys.argv[1:]:
     if sarg.startswith("--debug"):
         is_debug = True
@@ -44,6 +46,9 @@ for sarg in sys.argv[1:]:
 
     if sarg.startswith("--no-schedule"):
         is_schedule = False
+
+    if sarg.startswith("--override-profile"):
+        is_override = True
 
 
 def main():
