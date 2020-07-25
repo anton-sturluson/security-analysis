@@ -41,7 +41,6 @@ class ChromeDriver:
     def __init__(self, is_debug, is_init, n_symbol):
         self.is_debug = is_debug
         self.is_init = is_init
-        self.today = datetime.today().date()
         self.results = defaultdict(dict)
         if self.is_init:
             self.is_stocks = [None] * n_symbol
@@ -130,10 +129,18 @@ class ChromeDriver:
         if path.exists(inpath):
             # concat with existing file, remove any duplicate row
             maindf = tools.path2df(inpath, sep=sep, index_col=index_col)
-            maindf = maindf[maindf.index != self.today.strftime("%Y-%m-%d")]
+            maindf = maindf[maindf.index != self.get_today().strftime("%Y-%m-%d")]
             curdf = pd.concat([curdf, maindf], axis=0)
         # sort and save
         curdf.sort_index(ascending=False).to_csv(inpath, index=True)
+
+
+    def get_today(self):
+        today = datetime.today()
+        premkt = today.replace(hour=8, minute=0, second=0, microsecond=0)
+        if today < premkt:
+            return (today - timedelta(days=1)).date()
+        return today.date()
 
 
     def is_stock(self, soup):
@@ -174,7 +181,7 @@ class ChromeDriver:
 
     def crawl_summary(self, symbol):
         """Crawl data to get saved in symbol_summary.csv."""
-        data = {"Date" : self.today, "Symbol" : symbol}
+        data = {"Date" : self.get_today(), "Symbol" : symbol}
         # [Summary, Statistics]
         result = [False, False]
         for _ in range(MAX_TRIAL):
