@@ -27,6 +27,7 @@ var2filename = {"summary" : "summary",
                 "Sector" : "profile",
                 "Industry" : "profile",
                 "Exchange" : "profile",
+                "IS_STOCK" : "profile",
 
                 "Market Cap" : "summary",
                 "Shares Outstanding" : "summary",
