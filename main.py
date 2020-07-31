@@ -13,20 +13,19 @@ from utils import tools, DATADIR, PROFILEPATH
 
 def create_profile():
     """Merge .csv files in DATADIR and save to PROFILEPATH."""
-    if not os.path.exists(PROFILEPATH) or is_override:
-        cols = ["Symbol", "Name", "IPOyear", "Sector", "Industry"]
-        dfs = [(pd.read_csv(os.path.join(DATADIR, path_))[cols]
-                    .assign(Exchange=path_.split(".")[0].upper()))
-               for path_ in ["amex.csv", "nasdaq.csv", "nyse.csv"]]
-        df = pd.concat(dfs, axis=0)
+    cols = ["Symbol", "Name", "IPOyear", "Sector", "Industry"]
+    dfs = [(pd.read_csv(os.path.join(DATADIR, path_))[cols]
+                .assign(Exchange=path_.split(".")[0].upper()))
+           for path_ in ["amex.csv", "nasdaq.csv", "nyse.csv"]]
+    df = pd.concat(dfs, axis=0)
 
-        def process_symbol(symbol):
-            symbol = symbol.replace("^", "-P")
-            symbol = symbol.replace(".", "-")
-            return symbol
-        df["Symbol"] = df["Symbol"].apply(process_symbol)
-        df = df.loc[df["Symbol"].apply(lambda x: "~" not in x), :]
-        df.sort_values("Symbol").to_csv(PROFILEPATH, index=False) # save
+    def process_symbol(symbol):
+        symbol = symbol.replace("^", "-P")
+        symbol = symbol.replace(".", "-")
+        return symbol
+    df["Symbol"] = df["Symbol"].apply(process_symbol)
+    df = df.loc[df["Symbol"].apply(lambda x: "~" not in x), :]
+    df.sort_values("Symbol").to_csv(PROFILEPATH, index=False) # save
 
 # switches
 is_init = False
@@ -72,10 +71,11 @@ def main():
             except Exception as e:
                 tools.log(f"[{symbol}] Failure crawling history: {e}", is_debug)
 
-        try:
-            driver.crawl_summary(symbol)
-        except Exception as e:
-            tools.log(f"[{symbol}] Failure crawling summary: {e}", is_debug)
+        elif tools.get("IS_STOCK", symbol, i_start=0): # crawl summary of stocks
+            try:
+                driver.crawl_summary(symbol)
+            except Exception as e:
+                tools.log(f"[{symbol}] Failure crawling summary: {e}", is_debug)
 
     driver.quit()
 
@@ -97,10 +97,12 @@ if __name__ == "__main__":
 
     if not os.path.exists(PROFILEPATH) or is_init:
         is_init = True
-        create_profile()
+        if not os.path.exists(PROFILEPATH) or is_override:
+            create_profile()
         main()
+        is_init = False
 
-    if not (is_debug or is_test) and is_schedule:
+    if not is_debug and is_schedule:
         schedule.every().monday.at("19:00").do(main)
         schedule.every().tuesday.at("19:00").do(main)
         schedule.every().wednesday.at("19:00").do(main)
