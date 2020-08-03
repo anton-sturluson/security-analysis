@@ -1,4 +1,5 @@
 import time
+import pickle
 import random
 from os import path
 from datetime import datetime, timedelta
@@ -14,13 +15,15 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 
 from utils import tools, COMPANYDIR
-from localpaths import DOWNLOADPATH, DRIVERPATH
+from localpaths import DOWNLOADPATH, DRIVERPATH, ID, PASSWORD
 
 # global variables
 TIMEOUT = 10
 MAX_TRIAL = 3
 
 # URLs
+def signinurl():
+    return "https://login.yahoo.com/"
 def summaryurl(t):
     return f"https://finance.yahoo.com/quote/{t}?p={t}&.tsrc=fin-srch"
 def profileurl(t):
@@ -44,9 +47,11 @@ class ChromeDriver:
         self.results = defaultdict(dict)
         if self.is_init:
             self.is_stocks = [None] * n_symbol
-            self.i = 0
+            self.currencys = [None] * n_symbol
 
         self.init_driver()
+        self.signin()
+
 
     def init_driver(self):
         """Initialize ChromeDriver."""
@@ -64,14 +69,46 @@ class ChromeDriver:
         prefs = {"profile.managed_default_content_settings.images" : 2,
                  "profile.default_content_setting_values.notifications" : 2,
                  "profile.managed_default_content_settings.stylesheets" : 2,
-                 "profile.managed_default_content_settings.cookies" : 2,
                  "profile.managed_default_content_settings.javascript" : 1,
                  "profile.managed_default_content_settings.plugins" : 1,
                  "profile.managed_default_content_settings.popups" : 2,
                  "profile.managed_default_content_settings.geolocation" : 2,
                  "profile.managed_default_content_settings.media_stream" : 2}
+        #if not self.is_init: # cookie must be enabled to sign in
+        #    prefs["profile.managed_default_content_settings.cookies"] = 2
         options.add_experimental_option("prefs", prefs)
         self.driver = webdriver.Chrome(DRIVERPATH, options=options)
+
+
+    def signin(self):
+        """Sign in Yahoo Finance using ID and password saved in localkeys.py."""
+        # from https://stackoverflow.com/questions/48352380/org-openqa-selenium-invalidcookiedomainexception-document-is-cookie-averse-usin
+        self.driver.get(signinurl())
+
+        # send ID
+        WebDriverWait(self.driver, TIMEOUT).until(
+            EC.element_to_be_clickable((
+                By.CSS_SELECTOR,
+                "input[name='username']"))).send_keys(ID)
+        # click submit
+        WebDriverWait(self.driver, TIMEOUT).until(
+            EC.element_to_be_clickable((
+                By.CSS_SELECTOR,
+                "input[name='signin']"))).click()
+        # wait til password
+        self.sleep()
+        # send password
+        WebDriverWait(self.driver, TIMEOUT).until(
+            EC.element_to_be_clickable((
+                By.CSS_SELECTOR,
+                "input[name='password']"))).send_keys(PASSWORD)
+        # click submit
+        WebDriverWait(self.driver, TIMEOUT).until(
+            EC.element_to_be_clickable((
+                By.CSS_SELECTOR,
+                "button[type='submit']"))).click()
+        # wait til log-in
+        self.sleep()
 
 
     def close(self):
@@ -84,7 +121,7 @@ class ChromeDriver:
         self.driver.quit()
 
 
-    def sleep(self, tmin=4, tmax=5):
+    def sleep(self, tmin=3, tmax=5):
         """Sleep crawler."""
         if tmin >= tmax:
             tmin = tmax - 2
@@ -132,7 +169,9 @@ class ChromeDriver:
             maindf = maindf[maindf.index != self.get_today().strftime("%Y-%m-%d")]
             curdf = pd.concat([curdf, maindf], axis=0)
         # sort and save
-        curdf.sort_index(ascending=False).to_csv(inpath, index=True)
+        if "Date" in curdf:
+            curdf.sort_index(ascending=False, inplace=True)
+        curdf.to_csv(inpath, index=True)
 
 
     def get_today(self):
@@ -141,18 +180,6 @@ class ChromeDriver:
         if today < premkt:
             return (today - timedelta(days=1)).date()
         return today.date()
-
-
-    def is_stock(self, soup):
-        """Return True if corresponding symbol to soup is stock else False.
-
-            Note this information is stored if self.is_init==True and saved in profile."""
-        if (div := soup.find("div", id="quote-nav")) is not None:
-            sections = {sec for a in div.find_all("a")
-                        if (sec := a.text) == "Financials"}
-            return "Financials" in sections
-
-        return False
 
 
     def preprocess(self, data):
@@ -174,12 +201,32 @@ class ChromeDriver:
         return newdata
 
 
+    def is_stock(self):
+        """Return True if corresponding symbol is a stock else False."""
+        # wait until sections are visible
+        WebDriverWait(self.driver, TIMEOUT).until(
+            EC.visibility_of_all_elements_located((
+                By.CSS_SELECTOR,
+                "div[id='quote-nav']>ul>li")))
+        for section in self.driver.find_elements_by_css_selector(
+                "div[id='quote-nav']>ul>li"):
+            if "Financials" in section.text:
+                return True
+
+        return False
+
+
     def is_finished(self, result):
         """Return True if all elements in result is True else False."""
         return sum(result) == len(result)
 
 
-    def crawl_summary(self, symbol):
+    def mv_downloaded(self, symbol, from_, to_):
+        tools.mv(path.join(DOWNLOADPATH, from_),
+                 tools.get_path(to_, symbol, is_debug=self.is_debug))
+
+
+    def crawl_summary(self, symbol, i):
         """Crawl data to get saved in symbol_summary.csv."""
         data = {"Date" : self.get_today(), "Symbol" : symbol}
         # [Summary, Statistics]
@@ -203,9 +250,6 @@ class ChromeDriver:
                         for tr in table.find_all("tr"):
                             col, val = self.parse(tr)
                             data[col] = val
-
-                    if self.is_init:
-                        self.is_stocks[self.i] = self.is_stock(soup)
 
                     result[0] = True
                     if not self.is_finished(result):
@@ -242,26 +286,25 @@ class ChromeDriver:
 
         name = "summary"
         if not self.is_finished(result):
-            self.results[symbol][name] = result
-        self.save(name, symbol, data)
+            if not self.is_init or (self.is_init and self.is_stocks[i]):
+                self.results[symbol][name] = result
+        else:
+            self.save(name, symbol, data)
 
-        if self.is_init: # update self.is_stocks index
-            self.i += 1
 
-
-    def crawl_history(self, symbol):
+    def crawl_history(self, symbol, i):
         """Crawl historical data.
 
             This includes:
-                - symbol_dividend.csv
-                - symbol_history.csv
-                - symbol_stock_split.csv"""
+                - Dividend history: symbol_dividend.csv
+                - Stock price history: symbol_history.csv
+                - Stock split history: symbol_stock_split.csv"""
         def download():
             WebDriverWait(self.driver, TIMEOUT).until( # click arrow
                 EC.element_to_be_clickable((
                     By.CSS_SELECTOR,
                     "section>div>div>span>a"))).click()
-            self.sleep(2, 3) # wait to download
+            self.sleep() # wait to download
 
         def switch(to_):
             WebDriverWait(self.driver, TIMEOUT).until( # click Show
@@ -280,13 +323,19 @@ class ChromeDriver:
                 EC.element_to_be_clickable((
                     By.CSS_SELECTOR,
                     "section>div>div>button"))).click()
-            self.sleep(2, 3) # wait to load
+            self.sleep() # wait to load
 
         # [Historical Prices, Dividends Only, Stock Splits]
         result = [False, False, False]
         for _ in range(MAX_TRIAL):
             try:
                 self.driver.get(historyurl(symbol))
+
+                if self.is_init:
+                    self.is_stocks[i] = self.is_stock()
+                    if not self.is_stocks[i]:
+                        break
+
                 # click dropdown
                 WebDriverWait(self.driver, TIMEOUT).until(
                     EC.element_to_be_clickable((
@@ -298,65 +347,256 @@ class ChromeDriver:
                         By.CSS_SELECTOR, "li>button[data-value='MAX']"))
                     ).click()
                 # wait to load
-                self.sleep(2, 3)
+                self.sleep()
 
             except TimeoutException:
                 self.sleep()
                 continue
 
+            downloaded = f"{symbol}.csv"
             if not result[0]:
-                try:
-                    # download
-                    download()
-                    # move summary.csv to data dir
-                    tools.mv(path.join(DOWNLOADPATH, f"{symbol}.csv"),
-                             tools.get_path("history", symbol,
-                                            is_debug=self.is_debug))
-
-                except TimeoutException:
-                    pass
-
-                else:
+                name = "history"
+                if not self.is_debug and path.exists(tools.get_path(name,
+                                                                    symbol)):
                     result[0] = True
 
-            if not result[1]:
-                try:
-                    what = "Dividends Only"
-                    # switch to dividends
-                    switch(what)
-                    # download
-                    download()
-                    # move divdend.csv to data dir
-                    tools.mv(path.join(DOWNLOADPATH, f"{symbol}.csv"),
-                             tools.get_path(what, symbol, is_debug=self.is_debug))
-
-                except TimeoutException:
-                    pass
-
                 else:
+                    try:
+                        # download
+                        download()
+                        # move summary.csv to data dir
+                        self.mv_downloaded(symbol,
+                                           downloaded,
+                                           name)
+
+                    except TimeoutException:
+                        pass
+
+                    else:
+                        result[0] = True
+
+            if not result[1]:
+                name = "Dividends Only"
+                if not self.is_debug and path.exists(tools.get_path(name,
+                                                                    symbol)):
                     result[1] = True
 
-            if not result[2]:
-                try:
-                    what = "Stock Splits"
-                    # switch to dividends
-                    switch(what)
-                    # click download
-                    download()
-                    # move split.csv to data dir
-                    tools.mv(path.join(DOWNLOADPATH, f"{symbol}.csv"),
-                             tools.get_path(what, symbol, is_debug=self.is_debug))
-
-                except TimeoutException:
-                    pass
-
                 else:
+                    try:
+                        # switch to dividends
+                        switch(name)
+                        # download
+                        download()
+                        # move divdend.csv to data dir
+                        self.mv_downloaded(symbol, downloaded, name)
+
+                    except TimeoutException:
+                        pass
+
+                    else:
+                        result[1] = True
+
+            if not result[2]:
+                name = "Stock Splits"
+                if not self.is_debug and path.exists(tools.get_path(name,
+                                                                    symbol)):
                     result[2] = True
+                else:
+                    try:
+                        # switch to dividends
+                        switch(name)
+                        # click download
+                        download()
+                        # move split.csv to data dir
+                        self.mv_downloaded(symbol, downloaded, name)
+
+                    except TimeoutException:
+                        pass
+
+                    else:
+                        result[2] = True
 
             if self.is_finished(result):
                 break
             self.sleep()
 
-        name = "history"
         if not self.is_finished(result):
-            self.results[symbol][name] = result
+            if not self.is_init or (self.is_init and self.is_stocks[i]):
+                self.results[symbol]["history"] = result
+
+
+    def crawl_financials(self, symbol, i):
+        """Crawl financial data.
+
+            This includes:
+                - Income Statement
+                - Balance Sheet
+                - Cash Flow"""
+        def click_quarterly_and_download():
+            """Click 'Quarterly' and 'Download'."""
+            # click Quarterly
+            WebDriverWait(self.driver, TIMEOUT).until(
+                EC.element_to_be_clickable((
+                    By.CSS_SELECTOR,
+                    "section[data-test='qsp-financial']>div>div>button"))
+                ).click()
+            self.sleep() # wait to load
+
+            # click Download
+            WebDriverWait(self.driver, TIMEOUT).until(
+                EC.element_to_be_clickable((
+                    By.CSS_SELECTOR,
+                    "section[data-test='qsp-financial'] div>span>button"))
+                ).click()
+            self.sleep() # wait to download
+
+        def get_currency():
+            tmp = WebDriverWait(self.driver, TIMEOUT).until(
+                EC.visibility_of_element_located((
+                    By.CSS_SELECTOR,
+                    "section[data-test='qsp-financial']>div>span>span"))).text
+            if "." in tmp:
+                tmp = tmp.split(".")[0].split(" ")
+                return tmp[2] if len(tmp) == 3 else None
+
+            return "USD"
+
+        # [Income Statement, Balance Sheet, Cash Flow]
+        result = [False, False, False]
+        for _ in range(MAX_TRIAL):
+
+            if self.is_init and not self.is_stocks[i]:
+                break
+
+            if not result[0]:
+                name = "income_statement"
+                if not self.is_debug and path.exists(tools.get_path(name,
+                                                                    symbol)):
+                    result[0] = True
+
+                else:
+                    try:
+                        self.driver.get(incomestatementurl(symbol))
+                        click_quarterly_and_download()
+                        self.mv_downloaded(symbol,
+                                           f"{symbol}_quarterly_financials.csv",
+                                           name)
+                        if self.is_init:
+                            if not self.is_stocks[i]:
+                                break
+                            self.currencys[i] = get_currency()
+
+                    except TimeoutException:
+                        pass
+
+                    else:
+                        result[0] = True
+
+            if not result[1]:
+                name = "balance_sheet"
+                if not self.is_debug and path.exists(tools.get_path(name,
+                                                                    symbol)):
+                    result[1] = True
+
+                else:
+                    try:
+                        self.driver.get(balancesheeturl(symbol))
+                        click_quarterly_and_download()
+                        self.mv_downloaded(symbol,
+                                           f"{symbol}_quarterly_balance-sheet.csv",
+                                           name)
+
+                    except TimeoutException:
+                        pass
+
+                    else:
+                        result[1] = True
+
+            if not result[2]:
+                name = "cash_flow"
+                if not self.is_debug and path.exists(tools.get_path(name,
+                                                                    symbol)):
+                    result[2] = True
+
+                else:
+                    try:
+                        self.driver.get(cashflowurl(symbol))
+                        click_quarterly_and_download()
+                        self.mv_downloaded(symbol,
+                                           f"{symbol}_quarterly_cash-flow.csv",
+                                           name)
+
+                    except TimeoutException:
+                        pass
+
+                    else:
+                        result[2] = True
+
+            if self.is_finished(result):
+                break
+            self.sleep()
+
+        if not self.is_finished(result):
+            if not self.is_init or (self.is_init and self.is_stocks[i]):
+                self.results[symbol]["financials"] = result
+
+
+    def crawl_statistics(self, symbol, i):
+        """Crawl statistics.csv."""
+        result = False
+        data = {}
+        for _ in range(MAX_TRIAL):
+            try:
+                self.driver.get(statisticsurl(symbol))
+                WebDriverWait(self.driver, TIMEOUT).until(
+                    EC.visibility_of_element_located((
+                        By.ID, "Main")))
+
+            except TimeoutException:
+                pass
+
+            else: # crawl statistics with bs4
+                html_content = self.driver.page_source
+                soup = BeautifulSoup(html_content, "html.parser")
+                for section in soup.find_all(
+                        "section", {"data-test":"qsp-statistics"}):
+                    for div in section.find_all("div"):
+                        if ((h3 := div.find("h3")) is not None
+                            and h3.text in {"Fiscal Year",
+                                            "Profitability",
+                                            "Management Effectiveness",
+                                            "Income Statement",
+                                            "Balance Sheet",
+                                            "Cash Flow Statement"}):
+                            for tr in div.find_all("tr"):
+                                col, val = self.parse(tr)
+                                data[col] = val
+                self.sleep()
+
+                try: # download quarterly statistics
+                    WebDriverWait(self.driver, TIMEOUT).until(
+                        EC.element_to_be_clickable((
+                            By.CSS_SELECTOR,
+                            "section[data-test='qsp-statistics'] div>span>button"))
+                        ).click()
+                    self.sleep()
+                    # move downloaded file to symbol dir
+                    self.mv_downloaded(symbol,
+                                       f"{symbol}_quarterly_valuation_measures.csv",
+                                       "statistics")
+
+                except TimeoutException:
+                    pass
+
+                else:
+                    result = True
+                    break
+
+            self.sleep()
+
+        if result:
+            self.save("tmp", symbol, data)
+        elif not self.is_finished(result):
+            if not self.is_init or (self.is_init and self.is_stocks[i]):
+                self.results[symbol]["financials"] = result
+            self.results[symbol]["statistics"] = result

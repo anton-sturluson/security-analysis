@@ -4,10 +4,11 @@ import json
 from functools import lru_cache
 from os import path, rename, system
 
+import numpy as np
 import pandas as pd
 
 from utils import PROFILEPATH, COMPANYDIR, LOGPATH, RESULTPATH
-from crawler.mapping import var2filename, var2filetype
+from crawler.mapping import month2digit, var2filename, var2filetype
 
 
 def cp(from_, to_):
@@ -52,8 +53,11 @@ def json_dump(json_obj, is_debug=False, is_print=True, indent=4):
         print(json.dumps(json_obj, indent=indent))
 
 
-def get_symbols():
-    return get_data("Symbol").values
+def get_symbols(stock_only=False):
+    df = path2df(PROFILEPATH, index_col=None)
+    if stock_only and "IS_STOCK" in df:
+        return df["Symbol"][df["IS_STOCK"]].values
+    return df["Symbol"].values
 
 
 def path2dir(path):
@@ -107,7 +111,6 @@ def path2df(path, sep=",", index_col=0):
 @lru_cache()
 def get_data(var,
              symbol=None,
-             currency="USD",
              is_yearly=False,
              i_start=None,
              i_end=None,
@@ -149,23 +152,24 @@ def get_data(var,
                 prev = tmp
             tmp = reader2next(reader)
 
-            if (tmp is None and ri > 0) or ri > 0:
-                dates.append(prev["Date"]) if not is_profile else None
+            if ri > i_start:
+                if not is_profile and prev["Symbol"] == symbol:
+                    dates.append(prev["Date"])
                 if var2filetype[var] == "datetime":
                     res.append(pd.to_datetime(prev[var], errors="coerce"))
                 elif var2filetype[var] == "float":
                     res.append(pd.to_numeric(prev[var], errors="coerce"))
+                elif var2filetype[var] == "bool":
+                    res.append(bool(prev[var]))
                 else: # string
                     res.append(prev[var])
+
+                if return_scala:
+                    return res[0]
 
             if tmp is None:
                 break
             ri += 1
 
-        if len(res) == 0:
-            return
-
-        if return_scala:
-            return res[0]
-
-        return pd.Series(res) if is_profile else pd.Series(res, dates)
+        if len(res) > 0:
+            return pd.Series(res) if is_profile else pd.Series(res, dates)

@@ -52,10 +52,11 @@ for sarg in sys.argv[1:]:
 
 def main():
     # Initialize driver
-    driver = crawler.ChromeDriver(is_debug, is_init,
-                                  len(symbols := tools.get_symbols()))
+    symbols = tools.get_symbols(stock_only=False if is_init else True)
+    driver = crawler.ChromeDriver(is_debug, is_init, len(symbols))
 
     # Main loop
+    # TODO: move main loop inside ChromeDriver class in part 3
     if is_test:
         test_symbols = set(random.choices(symbols, k=100))
     for i, symbol in enumerate(symbols):
@@ -67,24 +68,37 @@ def main():
 
         if is_init:
             try:
-                driver.crawl_history(symbol)
+                driver.crawl_history(symbol, i)
             except Exception as e:
                 tools.log(f"[{symbol}] Failure crawling history: {e}", is_debug)
 
-        elif tools.get("IS_STOCK", symbol, i_start=0): # crawl summary of stocks
+            try:
+                driver.crawl_financials(symbol, i)
+            except Exception as e:
+                tools.log(f"[{symbol}] Failure crawling financials: {e}", is_debug)
+
+            try:
+                driver.crawl_statistics(symbol, i)
+            except Exception as e:
+                tools.log(f"[{symbol}] Failure crawling statistics: {e}", is_debug)
+
+        elif is_schedule:
             try:
                 driver.crawl_summary(symbol)
             except Exception as e:
                 tools.log(f"[{symbol}] Failure crawling summary: {e}", is_debug)
+
 
     driver.quit()
 
     tools.log("Failed results:", is_debug)
     tools.json_dump(driver.results, is_debug)
 
-    if is_init: # store boolean column IS_STOCK in stock_profile.csv
-        profiledf = pd.read_csv(PROFILEPATH)
+    # store boolean column IS_STOCK in stock_profile.csv
+    profiledf = pd.read_csv(PROFILEPATH)
+    if is_init and is_override:
         profiledf["IS_STOCK"] = driver.is_stocks
+        profiledf["Currency"] = driver.currencys
         profiledf.to_csv(PROFILEPATH, index=False)
 
 
@@ -95,14 +109,15 @@ if __name__ == "__main__":
     tools.log(f"Starting crawler ({is_debug=}) - {today:%Y-%m-%d:%H-%M-%S}", is_debug)
     tools.log("=" * 42, is_debug)
 
-    if not os.path.exists(PROFILEPATH) or is_init:
+    if not os.path.exists(PROFILEPATH) or is_override:
+        create_profile()
         is_init = True
-        if not os.path.exists(PROFILEPATH) or is_override:
-            create_profile()
+
+    if is_init or is_debug:
         main()
         is_init = False
 
-    if not is_debug and is_schedule:
+    if not is_debug:
         schedule.every().monday.at("19:00").do(main)
         schedule.every().tuesday.at("19:00").do(main)
         schedule.every().wednesday.at("19:00").do(main)
