@@ -10,7 +10,7 @@ import pandas as pd
 from bs4 import BeautifulSoup
 from selenium import webdriver
 from selenium.webdriver.common.by import By
-from selenium.common.exceptions import TimeoutException
+from selenium.common.exceptions import TimeoutException, StaleElementReferenceException
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 
@@ -224,6 +224,7 @@ class ChromeDriver:
 
     def exist(self, symbol):
         """Return True if symbol exists, else False."""
+        res = False
         self.driver.get(summaryurl(symbol)) # check Summary section
         try:
             WebDriverWait(self.driver, TIMEOUT).until(
@@ -232,10 +233,10 @@ class ChromeDriver:
                     "section[id='lookup-page']>section>div>h2")))
 
         except TimeoutException:
-            self.sleep(1, 2)
-            return True
+            res = True
 
-        return False
+        self.sleep()
+        return res
 
 
     def mv_downloaded(self, symbol, from_, to_):
@@ -270,8 +271,7 @@ class ChromeDriver:
                             data[col] = val
 
                     result[0] = True
-                    if not self.is_finished(result):
-                        self.sleep() # wait before reloading next page
+                    self.sleep()
 
             if not result[1]:
                 try:
@@ -297,11 +297,11 @@ class ChromeDriver:
                                     data[col] = val
 
                     result[1] = True
+                    self.sleep()
 
             if self.is_finished(result):
-                self.sleep(1, 2)
                 break
-            self.sleep() # sleep before crawling next symbol's summary
+            self.sleep()
 
         name = "summary"
         if not self.is_finished(result):
@@ -368,6 +368,7 @@ class ChromeDriver:
 
                 if self.is_init:
                     self.is_stocks[i] = self.is_stock()
+                    self.sleep()
                     if not self.is_stocks[i]:
                         break
 
@@ -445,7 +446,6 @@ class ChromeDriver:
                         result[2] = True
 
             if self.is_finished(result):
-                self.sleep(1, 2)
                 break
             self.sleep()
             is_max = False
@@ -519,6 +519,9 @@ class ChromeDriver:
                     except TimeoutException:
                         pass
 
+                    except StaleElementReferenceException:
+                        self.sleep(60, 120)
+
                     else:
                         result[0] = True
 
@@ -538,6 +541,9 @@ class ChromeDriver:
 
                     except TimeoutException:
                         pass
+
+                    except StaleElementReferenceException:
+                        self.sleep(60, 120)
 
                     else:
                         result[1] = True
@@ -559,11 +565,13 @@ class ChromeDriver:
                     except TimeoutException:
                         pass
 
+                    except StaleElementReferenceException:
+                        self.sleep(60, 120)
+
                     else:
                         result[2] = True
 
             if self.is_finished(result):
-                self.sleep(1, 2)
                 break
             self.sleep()
 
@@ -576,15 +584,17 @@ class ChromeDriver:
         """Crawl statistics.csv."""
         result = [False, False]
         data = {}
+        is_get = False
         for _ in range(MAX_TRIAL):
-            self.driver.get(statisticsurl(symbol))
 
-            name = "tmp"
-            if not self.is_debug and path.exists(tools.get_path(name, symbol)):
+            if not self.is_debug and path.exists(tools.get_path(name := "tmp",
+                                                                symbol)):
                 result[0] = True
 
             else:
                 try:
+                    self.driver.get(statisticsurl(symbol))
+                    is_get = True
                     WebDriverWait(self.driver, TIMEOUT).until(
                         EC.visibility_of_element_located((
                             By.ID, "Main")))
@@ -609,15 +619,18 @@ class ChromeDriver:
                                     col, val = self.parse(tr)
                                     data[col] = val
                     self.save(name, symbol, data)
+                    self.sleep()
                     result[0] = True
 
-            name = "statistics"
-            if not self.is_debug and path.exists(tools.get_path(name,
+            if not self.is_debug and path.exists(tools.get_path(name := "statistics",
                                                                 symbol)):
                 result[1] = True
 
             else:
                 try: # download quarterly statistics
+                    if not is_get:
+                        self.driver.get(statisticsurl(symbol))
+                        is_get = True
                     WebDriverWait(self.driver, TIMEOUT).until(
                         EC.element_to_be_clickable((
                             By.CSS_SELECTOR,
@@ -632,13 +645,16 @@ class ChromeDriver:
                 except TimeoutException:
                     pass
 
+                except StaleElementReferenceException:
+                    self.sleep(60, 120)
+
                 else:
                     result[1] = True
 
             if self.is_finished(result):
-                self.sleep(1, 2)
                 break
             self.sleep()
+            is_get = False
 
         if not self.is_finished(result):
             if not self.is_init or (self.is_init and self.is_stocks[i]):

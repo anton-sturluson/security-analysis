@@ -73,7 +73,6 @@ def main():
 
         if is_init or is_debug or is_test:
             if not driver.exist(symbol):
-                driver.sleep(1, 2)
                 continue
 
             # crawl Historical Data section
