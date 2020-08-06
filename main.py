@@ -22,7 +22,7 @@ def create_profile():
     def process_symbol(symbol):
         symbol = symbol.replace("^", "-P")
         symbol = symbol.replace(".", "-")
-        return symbol
+        return symbol.strip()
     df["Symbol"] = df["Symbol"].apply(process_symbol)
     df = df.loc[df["Symbol"].apply(lambda x: "~" not in x), :]
     df.sort_values("Symbol").to_csv(PROFILEPATH, index=False) # save
@@ -49,11 +49,16 @@ for sarg in sys.argv[1:]:
     if sarg.startswith("--override-profile"):
         is_override = True
 
+def try_crawl(crawl_fn, symbol, i, fn_name):
+    try:
+        crawl_fn(symbol, i)
+    except Exception as e:
+        tools.log(f"[{symbol}] Failure crawling {fn_name}: {e}", is_debug)
 
 def main():
     # Initialize driver
     symbols = tools.get_symbols(stock_only=False if is_init else True)
-    driver = crawler.ChromeDriver(is_debug, is_init, len(symbols))
+    driver = crawler.ChromeDriver(is_init, is_debug, is_test, len(symbols))
 
     # Main loop
     # TODO: move main loop inside ChromeDriver class in part 3
@@ -66,28 +71,21 @@ def main():
         if is_test and symbol not in test_symbols:
             continue
 
-        if is_init:
-            try:
-                driver.crawl_history(symbol, i)
-            except Exception as e:
-                tools.log(f"[{symbol}] Failure crawling history: {e}", is_debug)
+        if is_init or is_debug or is_test:
+            if not driver.exist(symbol):
+                driver.sleep(1, 2)
+                continue
 
-            try:
-                driver.crawl_financials(symbol, i)
-            except Exception as e:
-                tools.log(f"[{symbol}] Failure crawling financials: {e}", is_debug)
+            # crawl Historical Data section
+            try_crawl(driver.crawl_history, symbol, i, "history")
+            # crawl Financials section
+            try_crawl(driver.crawl_financials, symbol, i, "financials")
+            # crawl Statistics section
+            try_crawl(driver.crawl_statistics, symbol, i, "statistics")
 
-            try:
-                driver.crawl_statistics(symbol, i)
-            except Exception as e:
-                tools.log(f"[{symbol}] Failure crawling statistics: {e}", is_debug)
-
-        elif is_schedule:
-            try:
-                driver.crawl_summary(symbol)
-            except Exception as e:
-                tools.log(f"[{symbol}] Failure crawling summary: {e}", is_debug)
-
+        elif is_schedule and (is_debug or is_test):
+            # crawl daily Summary + Statistics section
+            try_crawl(driver.crawl_summary, symbol, i, "summary")
 
     driver.quit()
 
@@ -113,11 +111,11 @@ if __name__ == "__main__":
         create_profile()
         is_init = True
 
-    if is_init or is_debug:
+    if is_init or is_debug or is_test:
         main()
         is_init = False
 
-    if not is_debug:
+    if not is_debug and is_schedule:
         schedule.every().monday.at("19:00").do(main)
         schedule.every().tuesday.at("19:00").do(main)
         schedule.every().wednesday.at("19:00").do(main)
