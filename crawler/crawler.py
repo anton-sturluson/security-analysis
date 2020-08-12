@@ -1,5 +1,4 @@
 import time
-import pickle
 import random
 from os import path
 from datetime import datetime, timedelta
@@ -110,6 +109,13 @@ class ChromeDriver:
                 "button[type='submit']"))).click()
         # wait til log-in
         self.sleep()
+
+
+    def reboot(self):
+        self.sleep(240, 300) # rest for [4, 5] minutes
+        self.driver.quit()
+        self.init_driver()
+        self.signin()
 
 
     def close(self):
@@ -448,6 +454,7 @@ class ChromeDriver:
             if self.is_finished(result):
                 break
             self.sleep()
+            self.driver.refresh()
             is_max = False
 
         if not self.is_finished(result):
@@ -488,7 +495,6 @@ class ChromeDriver:
             if "." in tmp:
                 tmp = tmp.split(".")[0].split(" ")
                 return tmp[2] if len(tmp) == 3 else None
-
             return "USD"
 
         # [Income Statement, Balance Sheet, Cash Flow]
@@ -520,7 +526,7 @@ class ChromeDriver:
                         pass
 
                     except StaleElementReferenceException:
-                        self.sleep(60, 120)
+                        self.reboot()
 
                     else:
                         result[0] = True
@@ -543,7 +549,7 @@ class ChromeDriver:
                         pass
 
                     except StaleElementReferenceException:
-                        self.sleep(60, 120)
+                        self.reboot()
 
                     else:
                         result[1] = True
@@ -566,7 +572,7 @@ class ChromeDriver:
                         pass
 
                     except StaleElementReferenceException:
-                        self.sleep(60, 120)
+                        self.reboot()
 
                     else:
                         result[2] = True
@@ -586,9 +592,8 @@ class ChromeDriver:
         data = {}
         is_get = False
         for _ in range(MAX_TRIAL):
-
-            if not self.is_debug and path.exists(tools.get_path(name := "tmp",
-                                                                symbol)):
+            name = "tmp"
+            if not self.is_debug and path.exists(tools.get_path(name, symbol)):
                 result[0] = True
 
             else:
@@ -622,14 +627,15 @@ class ChromeDriver:
                     self.sleep()
                     result[0] = True
 
-            if not self.is_debug and path.exists(tools.get_path(name := "statistics",
-                                                                symbol)):
+            name = "statistics"
+            if not self.is_debug and path.exists(tools.get_path(name, symbol)):
                 result[1] = True
 
             else:
                 try: # download quarterly statistics
                     if not is_get:
                         self.driver.get(statisticsurl(symbol))
+                        self.sleep() # wait to load
                         is_get = True
                     WebDriverWait(self.driver, TIMEOUT).until(
                         EC.element_to_be_clickable((
@@ -646,7 +652,7 @@ class ChromeDriver:
                     pass
 
                 except StaleElementReferenceException:
-                    self.sleep(60, 120)
+                    self.reboot()
 
                 else:
                     result[1] = True
