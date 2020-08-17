@@ -9,9 +9,9 @@ import pandas as pd
 from bs4 import BeautifulSoup
 from selenium import webdriver
 from selenium.webdriver.common.by import By
-from selenium.common.exceptions import TimeoutException, StaleElementReferenceException
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
+from selenium.common.exceptions import TimeoutException, StaleElementReferenceException
 
 from utils import tools, COMPANYDIR
 from localpaths import DOWNLOADPATH, DRIVERPATH, ID, PASSWORD
@@ -81,16 +81,14 @@ class ChromeDriver:
 
 
     def signin(self):
-        """Sign in Yahoo Finance using ID and password saved in localkeys.py."""
-        # from https://stackoverflow.com/questions/48352380/org-openqa-selenium-invalidcookiedomainexception-document-is-cookie-averse-usin
+        """Sign in to Yahoo Finance using ID and password saved in localpaths.py."""
         self.driver.get(signinurl())
-
-        # send ID
+        # send username
         WebDriverWait(self.driver, TIMEOUT).until(
             EC.element_to_be_clickable((
                 By.CSS_SELECTOR,
                 "input[name='username']"))).send_keys(ID)
-        # click submit
+        # click 'Next'
         WebDriverWait(self.driver, TIMEOUT).until(
             EC.element_to_be_clickable((
                 By.CSS_SELECTOR,
@@ -112,8 +110,9 @@ class ChromeDriver:
 
 
     def reboot(self):
-        self.sleep(240, 300) # rest for [4, 5] minutes
+        """Reboot driver."""
         self.driver.quit()
+        self.sleep(300, 420) # rest for [5, 7] minutes
         self.init_driver()
         self.signin()
 
@@ -182,6 +181,9 @@ class ChromeDriver:
 
 
     def get_today(self):
+        """Get the date at the point where data is crawled.
+
+            If it is between 12am and 8am, return yeterday's date."""
         today = datetime.today()
         premkt = today.replace(hour=8, minute=0, second=0, microsecond=0)
         if today < premkt:
@@ -268,6 +270,9 @@ class ChromeDriver:
                 except TimeoutException:
                     pass
 
+                except StaleElementReferenceException:
+                    self.reboot()
+
                 else:
                     html_content = self.driver.page_source
                     soup = BeautifulSoup(html_content, "html.parser")
@@ -288,6 +293,9 @@ class ChromeDriver:
 
                 except TimeoutException:
                     pass
+
+                except StaleElementReferenceException:
+                    self.reboot()
 
                 else:
                     html_content = self.driver.page_source
@@ -355,11 +363,13 @@ class ChromeDriver:
                 EC.element_to_be_clickable((
                     By.CSS_SELECTOR,
                     "section div[data-test='dropdown']>div"))).click()
+
             # click max
             WebDriverWait(self.driver, TIMEOUT).until(
                 EC.element_to_be_clickable((
                     By.CSS_SELECTOR, "li>button[data-value='MAX']"))
                 ).click()
+
             # wait to load
             self.sleep()
             global is_max
@@ -403,6 +413,9 @@ class ChromeDriver:
                     except TimeoutException:
                         pass
 
+                    except StaleElementReferenceException:
+                        self.reboot()
+
                     else:
                         result[0] = True
 
@@ -426,6 +439,9 @@ class ChromeDriver:
                     except TimeoutException:
                         pass
 
+                    except StaleElementReferenceException:
+                        self.reboot()
+
                     else:
                         result[1] = True
 
@@ -447,6 +463,9 @@ class ChromeDriver:
 
                     except TimeoutException:
                         pass
+
+                    except StaleElementReferenceException:
+                        self.reboot()
 
                     else:
                         result[2] = True
@@ -493,7 +512,7 @@ class ChromeDriver:
                     By.CSS_SELECTOR,
                     "section[data-test='qsp-financial']>div>span>span"))).text
             if "." in tmp:
-                tmp = tmp.split(".")[0].split(" ")
+                tmp = tmp.split(".")[0].split(" ") # split first sentence
                 return tmp[2] if len(tmp) == 3 else None
             return "USD"
 
@@ -518,8 +537,6 @@ class ChromeDriver:
                                            f"{symbol}_quarterly_financials.csv",
                                            name)
                         if self.is_init:
-                            if not self.is_stocks[i]:
-                                break
                             self.currencys[i] = get_currency()
 
                     except TimeoutException:
