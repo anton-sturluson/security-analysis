@@ -81,7 +81,7 @@ def main():
             # crawl Statistics section
             try_crawl(driver.crawl_statistics, symbol, i, "statistics")
 
-        elif is_schedule and (is_debug or is_test):
+        elif is_schedule or is_debug or is_test:
             # crawl daily Summary + Statistics section
             try_crawl(driver.crawl_summary, symbol, i, "summary")
 
