@@ -61,7 +61,6 @@ def main():
     driver = crawler.ChromeDriver(is_init, is_debug, is_test, len(symbols))
 
     # Main loop
-    # TODO: move main loop inside ChromeDriver class in part 3
     if is_test:
         test_symbols = set(random.choices(symbols, k=100))
     for i, symbol in enumerate(symbols):
@@ -124,4 +123,4 @@ if __name__ == "__main__":
         i = 0
         while True:
             schedule.run_pending()
-            time.sleep(60)
+            time.sleep(1)
