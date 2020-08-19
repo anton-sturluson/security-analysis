@@ -392,6 +392,11 @@ class ChromeDriver:
                 self.sleep()
                 continue
 
+            except StaleElementReferenceException:
+                self.reboot()
+                continue
+
+
             downloaded = f"{symbol}.csv"
             if not result[0]:
                 name = "history"
@@ -623,6 +628,9 @@ class ChromeDriver:
 
                 except TimeoutException:
                     pass
+
+                except StaleElementReferenceException:
+                    self.reboot()
 
                 else: # crawl statistics with bs4
                     html_content = self.driver.page_source
