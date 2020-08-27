@@ -1,12 +1,10 @@
-# security-analysis-tutorial
+# security-analysis
 
 ## Introduction
 
-This is a source code for [Security Analysis with Python](https://medium.com/semper-augustus) in Medium.
-
-Currently, the following contents are implemented:
-1. [Security Analysis with Python — Web Crawler part I: How to collect financial data from Yahoo Finance](https://medium.com/semper-augustus/security-analysis-with-python-web-crawler-part-i-how-to-collect-financial-data-from-yahoo-5c326924052c) in branch [tutorial\_0.1](https://github.com/anton-sturluson/security-analysis-tutorial/tree/tutorial_0.1).
-2. [Security Analysis with Python — Web Crawler part II: How to collect financial data from Yahoo Finance](https://medium.com/semper-augustus/security-analysis-with-python-web-crawler-part-ii-how-to-collect-financial-data-from-yahoo-2d8f4e88ba49) in branch [tutorial\_0.2](https://github.com/anton-sturluson/security-analysis-tutorial/tree/tutorial_0.2).
+This repo consists of two main functions:
+1. Web crawler
+2. Bokeh dashboard
 
 ## How to run
 
