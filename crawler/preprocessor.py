@@ -10,32 +10,6 @@ mapping = tools.get_mapping()
 month2digit = mapping["month2digit"]
 col2dtype = mapping["col2dtype"]
 
-"""
-TODO:
-1. Sort x
-    - dividend
-    - history
-    - stock split
-2. Transpose financial statements x
-    - income statement
-    - balance sheet
-    - cash flow
-3. Remove redundant information from financial statements x
-    - income statement
-    - balance sheet
-    - cash flow
-4. Merge statistics with tmp.csv x
-5. Rename columns
-    - summary
-    - statistics (with tmp)
-6. Convert datatypes (string, datetime, bool, float)
-    - income statement
-    - balance sheet
-    - cash flow
-    - statistics
-    - summary
-7. Generate yearly data
-"""
 def sort_date_and_remove_nat(df):
     """Coerce datetime (index) and remove NaT."""
     df.index = pd.to_datetime(df.index, errors="coerce")
@@ -76,6 +50,7 @@ def merge_statistics_df(statistics_df, symbol, debug):
 def rename_columns(columns):
     """Remove content inside parantheses and trailing digit from column names."""
     new_columns = []
+    new_columns_set = set()
     for col in columns:
         if "(" in col: # remove anything in parantheses
             col = col.split("(")[0]
@@ -83,7 +58,15 @@ def rename_columns(columns):
             col = col[:len(col) - 1]
         if "Earnings Date" in col:
             col = "Earnings Date"
-        new_columns.append(col.strip())
+        col = col.strip()
+        if col in new_columns_set:
+            i = 1
+            while (col_i := ".".join([col, str(i)])) in new_columns_set:
+                i += 1
+            col = col_i
+        new_columns.append(col)
+        new_columns_set.add(col)
+
     return new_columns
 
 def convert_dtypes(df):
@@ -223,7 +206,6 @@ def process_text(symbols, init, debug):
                 statistics_df.columns = rename_columns(statistics_df.columns)
                 tools.backup_and_save_df(filename, symbol, statistics_df, init, debug)
 
-        #
         summary_df = tools.get_df(filename := "summary", symbol,
                                   convert_index_to_datetime=False)
         if summary_df is not None:
@@ -243,14 +225,14 @@ def generate_mapping(symbols, debug):
             if (df := tools.get_df(fname, symbol, debug=debug)) is not None:
                 for col in df.columns:
                     if col not in col2filename:
-                        print(col)
+                        print(f"{print(col)} added to mapping.json")
                         col2filename[col] = fname
     # update mapping
     with open("crawler/mapping.json", "w") as w_obj:
         json.dump(mapping, w_obj, indent=4)
 
 
-def process(symbols, init, debug):
+def init_process(symbols, init, debug):
     process_text(symbols, init, debug)
 
     if init or debug:
@@ -267,4 +249,6 @@ def process(symbols, init, debug):
                 print(f"processed {symbol}/{symbol}_{filename}.csv")
 
 
-
+def process_summary(df):
+    df.columns = rename_columns(df.columns)
+    convert_dtypes(df)

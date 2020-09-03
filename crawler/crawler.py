@@ -11,6 +11,7 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException, StaleElementReferenceException
 
 from utils import tools, COMPANYDIR
+from crawler.preprocessor import process_summary
 from localpaths import DOWNLOADPATH, DRIVERPATH, ID, PASSWORD
 
 # URLs
@@ -176,6 +177,7 @@ class ChromeDriver:
             # concat with existing file, remove any duplicate row
             maindf = tools.path2df(inpath, sep=sep, index_col=index_col)
             maindf = maindf[maindf.index != tools.get_today().strftime("%Y-%m-%d")]
+            process_summary(curdf)
             curdf = pd.concat([curdf, maindf], axis=0)
         # sort and save
         if "Date" in curdf:
@@ -564,7 +566,6 @@ class ChromeDriver:
         """Crawl statistics.csv."""
         result = [False, False]
         data = {}
-        url_accessed = False
         self.driver.get(statisticsurl(symbol))
         self.sleep(3)
         for _ in range(self.max_trial):
