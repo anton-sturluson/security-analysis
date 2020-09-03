@@ -76,8 +76,9 @@ def json_dump(json_obj, debug=False, verbose=True, indent=4):
 
 def get_symbols(stock_only=False):
     df = path2df(PROFILEPATH, index_col=None)
-    if stock_only and "IS_STOCK" in df:
-        return df["Symbol"][df["IS_STOCK"]].values
+    if stock_only and "Stock" in df:
+        mask = df["Stock"].fillna(False)
+        return df["Symbol"][mask].values
     return df["Symbol"].values
 
 
