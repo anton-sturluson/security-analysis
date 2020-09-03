@@ -4,6 +4,7 @@ localpaths.py
 # cache
 **/.DS_Store
 __pycache__
+**/*.swp
 
 # log file
 crawler/log.txt
