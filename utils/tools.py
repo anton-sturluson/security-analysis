@@ -162,6 +162,7 @@ def backup_and_save_df(col, symbol, df, init, debug, index=True):
 def get_data(col,
              symbol=None,
              yearly=False,
+             i=None,
              i_start=None,
              i_end=None,
              sep=","):
@@ -171,55 +172,41 @@ def get_data(col,
         except StopIteration:
             return
 
-    profile = True if symbol is None else False
+    profile = True if not symbol else False
 
     if not path.exists(inpath := get_path(col, symbol, yearly)):
         return
 
-    if i_start is None and i_end is None: # return whole vector
-        i_start = 0
-        i_end = sys.maxsize # HMM...
-
     skip_ttm = (True if col2filename[col] in ["cash_flow", "income_statement"]
                 else False)
+
+    if i is not None:
+        i_start = i
+        i_end = i + 1
 
     with open(inpath, "r") as r_obj:
         reader = csv.DictReader(r_obj, delimiter=sep)
 
-        if skip_ttm and reader2next(reader) is None:
-            return
-
-        return_scala = False
-        if i_end is None:
-            return_scala = True
-            i_end = i_start
+        #if skip_ttm and reader2next(reader) is None:
+        #    return
 
         ri = 0
         dates, res = [], []
-        tmp = None
-        while ri <= i_end:
-            if tmp is not None:
-                prev = tmp
-            tmp = reader2next(reader)
-
-            if ri > i_start:
-                if not profile and prev["Symbol"] == symbol:
-                    dates.append(prev["Date"])
+        data = reader2next(reader)
+        while ri < i_end and data:
+            if ri >= i_start:
+                if not profile:
+                    dates.append(data["Date"])
                 if col2dtype[col] == "datetime":
-                    res.append(pd.to_datetime(prev[col], errors="coerce"))
+                    res.append(pd.to_datetime(data[col], errors="coerce"))
                 elif col2dtype[col] == "float":
-                    res.append(pd.to_numeric(prev[col], errors="coerce"))
+                    res.append(pd.to_numeric(data[col], errors="coerce"))
                 elif col2dtype[col] == "bool":
-                    res.append(bool(prev[col]))
-                else: # string
-                    res.append(prev[col])
+                    res.append(bool(data[col]))
+                else:
+                    res.append(data[col])
 
-                if return_scala:
-                    return res[0]
-
-            if tmp is None:
-                break
             ri += 1
+            data = reader2next(reader)
 
-        if len(res) > 0:
-            return pd.Series(res) if profile else pd.Series(res, dates)
+    return res[-1] if i is not None else res
