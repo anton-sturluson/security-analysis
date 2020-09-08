@@ -1,14 +1,14 @@
 import os
 import sys
 import time
-import random
 from datetime import datetime
 
 import schedule
 import pandas as pd
 
-from crawler import crawler
-from utils import tools, DATADIR, PROFILEPATH
+from crawler.crawler import ChromeDriver
+from crawler.preprocessor import init_process
+from utils import tools, DATADIR, PROFILEPATH, PROFILEBACKPATH
 
 
 def create_profile():
@@ -25,100 +25,122 @@ def create_profile():
         return symbol.strip()
     df["Symbol"] = df["Symbol"].apply(process_symbol)
     df = df.loc[df["Symbol"].apply(lambda x: "~" not in x), :]
+
+    if os.path.exists(PROFILEPATH): # backup
+        tools.mv(PROFILEPATH, PROFILEBACKPATH)
     df.sort_values("Symbol").to_csv(PROFILEPATH, index=False) # save
 
 # switches
-is_init = False
-is_debug = False # run with first 5 symbols
-is_test = False # run with k randomly selected symbols
-is_schedule = True
-is_override = False
+init = False
+debug = False # run with first 5 symbols
+schedule_crawler = True
+override_profile = False
+preprocess_only = False
+force_summary = False
+k = None
 for sarg in sys.argv[1:]:
     if sarg.startswith("--debug"):
-        is_debug = True
+        debug = True
 
     if sarg.startswith("--init"): # coerce init mode
-        is_init = True
-
-    if sarg.startswith("--test"):
-        is_test = True
+        init = True
 
     if sarg.startswith("--no-schedule"):
-        is_schedule = False
+        schedule_crawler = False
 
     if sarg.startswith("--override-profile"):
-        is_override = True
+        override_profile = True
 
-def try_crawl(crawl_fn, symbol, i, fn_name):
+    if sarg.startswith("--preprocess-only"):
+        preprocess_only = True
+        schedule_crawler = False
+
+    if sarg.startswith("--force-summary"):
+        force_summary = True
+
+    if sarg.startswith("--k="): # for testing real data
+        k = int(sarg.split("=")[1])
+
+
+def try_crawl(crawl_fn, symbol, fn_name):
     try:
-        crawl_fn(symbol, i)
+        crawl_fn(symbol)
     except Exception as e:
-        tools.log(f"[{symbol}] Failure crawling {fn_name}: {e}", is_debug)
+        tools.log(f"[{symbol}] Failure crawling {fn_name}: {e}", debug)
 
-def main():
-    # Initialize driver
-    symbols = tools.get_symbols(stock_only=False if is_init else True)
-    driver = crawler.ChromeDriver(is_init, is_debug, is_test, len(symbols))
 
-    # Main loop
-    if is_test:
-        test_symbols = set(random.choices(symbols, k=100))
-    for i, symbol in enumerate(symbols):
-        if is_debug and i == 5:
-            break
+def main(summary):
+    symbols = tools.get_symbols(stock_only=False if init else True)
+    if debug or k:
+        symbols = symbols[:k if k else 5]
 
-        if is_test and symbol not in test_symbols:
-            continue
+    if not preprocess_only:
+        # Initialize driver
+        driver = ChromeDriver(init, debug)
 
-        if is_init or is_debug or is_test:
-            if not driver.exist(symbol):
-                continue
+        # Main loop
+        for i, symbol in enumerate(symbols):
+            if False:
+            #if init or debug:
+                if not driver.exist(symbol):
+                    continue
 
-            # crawl Historical Data section
-            try_crawl(driver.crawl_history, symbol, i, "history")
-            # crawl Financials section
-            try_crawl(driver.crawl_financials, symbol, i, "financials")
-            # crawl Statistics section
-            try_crawl(driver.crawl_statistics, symbol, i, "statistics")
+                if driver.last_symbol_is_stock:
+                    # crawl Historical Data section
+                    try_crawl(driver.crawl_history, symbol, "history")
+                    # crawl Financials section
+                    try_crawl(driver.crawl_financials, symbol, "financials")
+                    # crawl Statistics section
+                    try_crawl(driver.crawl_statistics, symbol, "statistics")
 
-        elif is_schedule or is_debug or is_test:
-            # crawl daily Summary + Statistics section
-            try_crawl(driver.crawl_summary, symbol, i, "summary")
+                driver.reset_last_symbol_info()
 
-    driver.quit()
+            if summary or debug:
+                # crawl daily Summary + Statistics section
+                #try_crawl(driver.crawl_summary, symbol, "summary")
+                driver.crawl_summary(symbol)
 
-    tools.log("Failed results:", is_debug)
-    tools.json_dump(driver.results, is_debug)
+        # quit driver
+        driver.quit()
 
-    # store boolean column IS_STOCK in stock_profile.csv
-    profiledf = pd.read_csv(PROFILEPATH)
-    if is_init and is_override:
-        profiledf["IS_STOCK"] = driver.is_stocks
-        profiledf["Currency"] = driver.currencys
-        profiledf.to_csv(PROFILEPATH, index=False)
+        tools.log("Failed results:", debug)
+        tools.json_dump(driver.results, debug)
+
+        if init:
+            # store stock and currency information in stock_profile.csv
+            profiledf = pd.read_csv(PROFILEPATH)
+            profiledf["Stock"] = driver.stocks
+            profiledf["Currency"] = driver.currencys
+            profiledf.to_csv(PROFILEPATH, index=False)
+
+    if init or debug:
+        init_process(symbols, init, debug)
 
 
 if __name__ == "__main__":
-    tools.log("=" * 42, is_debug)
+    tools.log("=" * 42, debug)
     today = datetime.today()
     # Check https://docs.python.org/3/reference/lexical_analysis.html#f-strings for f-string
-    tools.log(f"Starting crawler ({is_debug=}) - {today:%Y-%m-%d:%H-%M-%S}", is_debug)
-    tools.log("=" * 42, is_debug)
+    tools.log(f"Starting crawler ({debug=}) - {today:%Y-%m-%d:%H-%M-%S}", debug)
+    tools.log("=" * 42, debug)
 
-    if not os.path.exists(PROFILEPATH) or is_override:
+    if not os.path.exists(PROFILEPATH) or override_profile:
         create_profile()
-        is_init = True
+        init = True
 
-    if is_init or is_debug or is_test:
-        main()
-        is_init = False
+    if init or debug or preprocess_only:
+        main(False)
+        init = False
 
-    if not is_debug and is_schedule:
-        schedule.every().monday.at("19:00").do(main)
-        schedule.every().tuesday.at("19:00").do(main)
-        schedule.every().wednesday.at("19:00").do(main)
-        schedule.every().thursday.at("19:00").do(main)
-        schedule.every().friday.at("19:00").do(main)
+    if force_summary:
+        main(True)
+
+    if not debug and schedule_crawler:
+        schedule.every().monday.at("19:00").do(main, True)
+        schedule.every().tuesday.at("19:00").do(main, True)
+        schedule.every().wednesday.at("19:00").do(main, True)
+        schedule.every().thursday.at("19:00").do(main, True)
+        schedule.every().friday.at("19:00").do(main, True)
 
         i = 0
         while True:
