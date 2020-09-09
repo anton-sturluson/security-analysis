@@ -1,5 +1,6 @@
-from os import path
 import json
+from os import path
+from datetime import datetime
 
 import numpy as np
 import pandas as pd
@@ -21,6 +22,25 @@ def transpose(df):
     """Transpose df, set 'Date' as index, and strip columns."""
     df = df.T.reset_index().rename(columns={"index" : "Date"})
     return df.set_index("Date")
+
+def quarterly2yearly(df, symbol):
+    if df.shape[1] < 2:
+        return
+
+    n_quarter = 4
+
+    yearly_df = df.iloc[::-1].rolling(n_quarter, min_periods=1).sum().iloc[::-1]
+    try:
+        fiscal_year_ends = (pd.to_datetime(tools.get_data("Fiscal Year Ends",
+                                                          symbol, i=0))
+                            .strftime("%Y-%m"))
+        year_month = yearly_df.index.map(lambda x: x.strftime("%Y-%m"))
+        start_ind = year_month[year_month == fiscal_year_ends].iloc[0]
+    except:
+        start_ind = 0
+
+    return yearly_df.iloc[start_ind : len(yearly_df) : n_quarter, :]
+
 
 def merge_statistics_df(statistics_df, symbol, debug):
     """Merge statistics.csv with tmp.csv."""
@@ -45,6 +65,8 @@ def merge_statistics_df(statistics_df, symbol, debug):
             tools.mv(path.join(COMPANYDIR, symbol,
                                tools.name_append(symbol, "tmp", filetype="csv")),
                      originalpath)
+
+        new_df.index.name = "Date"
         return new_df
 
 def rename_columns(columns):
@@ -239,14 +261,27 @@ def init_process(symbols, init, debug):
         generate_mapping(symbols, debug)
 
     for symbol in symbols:
+        inpath = tools.get_path("statistics", symbol, debug=debug)
+        df = tools.path2df(inpath)
+
         for filename in \
                 ["income_statement", "balance_sheet", "cash_flow",
                  "statistics", "summary"]:
-            df = tools.get_df(filename, symbol, debug=debug, convert_index_to_datetime=True)
-            if df is not None:
+            inpath = tools.get_path(filename, symbol, debug=debug)
+            df = tools.path2df(inpath)
+
+            if df is not None and len(df):
                 convert_dtypes(df)
                 tools.backup_and_save_df(filename, symbol, df, init, debug)
-                print(f"processed {symbol}/{symbol}_{filename}.csv")
+                print(f"Processed {symbol}/{symbol}_{filename}.csv")
+
+                if filename in {"income_statement", "balance_sheet", "cash_flow"}:
+                    yearly_df = quarterly2yearly(df, symbol)
+                    tools.to_csv(yearly_df, tools.get_path(filename,
+                                                           symbol,
+                                                           yearly=True,
+                                                           debug=debug))
+                    print(f"Generated {symbol}/{symbol}_yearly_{filename}.csv")
 
 
 def process_summary(df):
