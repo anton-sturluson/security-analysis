@@ -48,11 +48,11 @@ def rm(path):
 
 
 def to_csv(df, outpath, index=True):
-    n = len(splitted := outpath.split("/"))
-    if not path.exists(outdir := path.join(*splitted[:n - 1])):
-        mkdir(outdir)
-    df.to_csv(outpath, index=index)
-
+    if df is not None:
+        n = len(splitted := outpath.split("/"))
+        if not path.exists(outdir := path.join(*splitted[:n - 1])):
+            mkdir(outdir)
+        df.to_csv(outpath, index=index)
 
 
 def log(msg, debug=False, verbose=True):
@@ -140,11 +140,12 @@ def get_df(col, symbol=None, yearly=False, sep=",",
 
 
 @lru_cache()
-def path2df(path, sep=",", index_col=0, convert_index_to_datetime=True):
-    df = pd.read_csv(path, sep=sep, index_col=index_col)
-    if convert_index_to_datetime:
-        df.index = pd.to_datetime(df.index, errors="coerce")
-    return df
+def path2df(inpath, sep=",", index_col=0, convert_index_to_datetime=True):
+    if path.exists(inpath):
+        df = pd.read_csv(inpath, sep=sep, index_col=index_col)
+        if convert_index_to_datetime:
+            df.index = pd.to_datetime(df.index, errors="coerce")
+        return df
 
 
 def backup_and_save_df(col, symbol, df, init, debug, index=True):
