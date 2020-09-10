@@ -80,8 +80,7 @@ def main(summary):
 
         # Main loop
         for i, symbol in enumerate(symbols):
-            if False:
-            #if init or debug:
+            if init or debug:
                 if not driver.exist(symbol):
                     continue
 
