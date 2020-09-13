@@ -1,5 +1,6 @@
 import time
-from os import path
+import traceback
+from os import path, cpu_count
 from collections import defaultdict
 
 import pandas as pd
@@ -34,7 +35,7 @@ def historyurl(t):
 
 
 class ChromeDriver:
-    def __init__(self, init, debug):
+    def __init__(self, init, debug, headless=True):
         self.init = init
         self.debug = debug
         self.results = defaultdict(dict)
@@ -46,15 +47,15 @@ class ChromeDriver:
         self.timeout = 5 # how many seconds to wait
         self.max_trial = 3 # how many times to try
 
-        self.init_driver()
-        if self.init or self.debug:
+        self.init_driver(headless and not self.init)
+        if self.init:
             self.signin()
 
 
-    def init_driver(self):
+    def init_driver(self, headless):
         """Initialize ChromeDriver."""
         options = webdriver.ChromeOptions()
-        if not (self.init or self.debug):
+        if headless:
             options.add_argument("--headless")
         options.add_argument("--incognito")
         options.add_argument("--disable-notifications")
@@ -72,8 +73,8 @@ class ChromeDriver:
                  "profile.managed_default_content_settings.popups" : 2,
                  "profile.managed_default_content_settings.geolocation" : 2,
                  "profile.managed_default_content_settings.media_stream" : 2}
-        #if not self.init: # cookie must be enabled to sign in
-        #    prefs["profile.managed_default_content_settings.cookies"] = 2
+        if not self.init: # cookie must be enabled to sign in
+            prefs["profile.managed_default_content_settings.cookies"] = 2
         options.add_experimental_option("prefs", prefs)
         self.driver = webdriver.Chrome(DRIVERPATH, options=options)
 
@@ -167,21 +168,18 @@ class ChromeDriver:
         if not isinstance(data, list):
             data = [data]
         curdf = pd.DataFrame(data)
-        if "Date" in curdf:
-            curdf["Date"] = (curdf["Date"].apply(
-                lambda x: pd.to_datetime(x, errors="coerce"))
-                             .astype("datetime64"))
-            curdf.set_index("Date", inplace=True)
+        curdf["Date"] = curdf["Date"].apply(tools.to_date)
+        curdf.set_index("Date", inplace=True)
+        process_summary(curdf)
 
         if path.exists(inpath):
-            # concat with existing file, remove any duplicate row
+            # concatenate with existing file, remove any duplicate row
             maindf = tools.path2df(inpath, sep=sep, index_col=index_col)
-            maindf = maindf[maindf.index != tools.get_today().strftime("%Y-%m-%d")]
-            process_summary(curdf)
+            maindf = maindf[maindf.index != tools.get_today()]
             curdf = pd.concat([curdf, maindf], axis=0)
+
         # sort and save
-        if "Date" in curdf:
-            curdf.sort_index(ascending=False, inplace=True)
+        curdf.sort_index(ascending=False, inplace=True)
         curdf.to_csv(inpath, index=True)
 
 
@@ -231,74 +229,75 @@ class ChromeDriver:
                  tools.get_path(to_, symbol, debug=self.debug))
 
 
-    def crawl_summary(self, symbol):
+    def crawl_summary(self, symbols):
         """Crawl data to get saved in symbol_summary.csv."""
-        data = {"Date" : tools.get_today(), "Symbol" : symbol}
-        # [Summary, Statistics]
-        result = [False, False]
-        for _ in range(self.max_trial):
-            if not result[0]: # crawl summary section
-                try:
-                    self.driver.get(summaryurl(symbol))
+        for symbol in symbols:
+            data = {"Date" : tools.get_today(), "Symbol" : symbol}
+            # [Summary, Statistics]
+            result = [False, False]
+            for _ in range(self.max_trial):
+                if not result[0]: # crawl summary section
+                    try:
+                        self.driver.get(summaryurl(symbol))
 
-                    WebDriverWait(self.driver, self.timeout).until(
-                        EC.visibility_of_all_elements_located((By.TAG_NAME,
-                                                               "table")))
+                        WebDriverWait(self.driver, self.timeout).until(
+                            EC.visibility_of_all_elements_located((By.TAG_NAME,
+                                                                   "table")))
 
-                except TimeoutException:
-                    pass
+                    except TimeoutException:
+                        pass
 
-                except StaleElementReferenceException:
-                    self.reboot()
+                    except StaleElementReferenceException:
+                        self.reboot()
 
-                else:
-                    html_content = self.driver.page_source
-                    soup = BeautifulSoup(html_content, "html.parser")
-                    for table in soup.find_all("table")[:2]:
-                        for tr in table.find_all("tr"):
-                            col, val = self.parse(tr)
-                            data[col] = val
+                    else:
+                        html_content = self.driver.page_source
+                        soup = BeautifulSoup(html_content, "html.parser")
+                        for table in soup.find_all("table")[:2]:
+                            for tr in table.find_all("tr"):
+                                col, val = self.parse(tr)
+                                data[col] = val
 
-                    result[0] = True
-                    self.sleep(3)
+                        result[0] = True
+                        self.sleep(3)
 
-            if not result[1]:
-                try:
-                    self.driver.get(statisticsurl(symbol))
-                    WebDriverWait(self.driver, self.timeout).until(
-                        EC.visibility_of_element_located((
-                            By.ID, "Main")))
+                if not result[1]:
+                    try:
+                        self.driver.get(statisticsurl(symbol))
+                        WebDriverWait(self.driver, self.timeout).until(
+                            EC.visibility_of_element_located((
+                                By.ID, "Main")))
 
-                except TimeoutException:
-                    pass
+                    except TimeoutException:
+                        pass
 
-                except StaleElementReferenceException:
-                    self.reboot()
+                    except StaleElementReferenceException:
+                        self.reboot()
 
-                else:
-                    html_content = self.driver.page_source
-                    soup = BeautifulSoup(html_content, "html.parser")
-                    for section in soup.find_all(
-                            "section", {"data-test":"qsp-statistics"}):
-                        for div in section.find_all("div"):
-                            children = list(div.children)
-                            if len(children) == 2 and children[0].text in {
-                                    "Stock Price History", "Share Statistics"}:
-                                for tr in children[1].find_all("tr"):
-                                    col, val = self.parse(tr)
-                                    data[col] = val
+                    else:
+                        html_content = self.driver.page_source
+                        soup = BeautifulSoup(html_content, "html.parser")
+                        for section in soup.find_all(
+                                "section", {"data-test":"qsp-statistics"}):
+                            for div in section.find_all("div"):
+                                children = list(div.children)
+                                if len(children) == 2 and children[0].text in {
+                                        "Stock Price History", "Share Statistics"}:
+                                    for tr in children[1].find_all("tr"):
+                                        col, val = self.parse(tr)
+                                        data[col] = val
 
-                    result[1] = True
-                    self.sleep(3)
+                        result[1] = True
+                        self.sleep(3)
 
-            if self.finished(result):
-                break
+                if self.finished(result):
+                    break
 
-        name = "summary"
-        if not self.finished(result):
-            self.results[symbol][name] = result
-        else:
-            self.save(name, symbol, data)
+            name = "summary"
+            if not self.finished(result):
+                self.results[symbol][name] = result
+            else:
+                self.save(name, symbol, data)
 
 
     def crawl_history(self, symbol):
@@ -637,3 +636,6 @@ class ChromeDriver:
             self.results[symbol]["statistics"] = result
 
         self.sleep()
+
+
+
