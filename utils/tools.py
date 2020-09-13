@@ -138,13 +138,21 @@ def get_df(col, symbol=None, yearly=False, sep=",",
         return path2df(inpath, sep, index_col, convert_index_to_datetime)
 
 
+@lru_cache()
+def to_date(x):
+    res = pd.to_datetime(x, errors="coerce")
+    try:
+        return res.date()
+    except:
+        return res
+
 
 @lru_cache()
 def path2df(inpath, sep=",", index_col=0, convert_index_to_datetime=True):
     if path.exists(inpath):
         df = pd.read_csv(inpath, sep=sep, index_col=index_col)
         if convert_index_to_datetime:
-            df.index = pd.to_datetime(df.index, errors="coerce")
+            df.index = df.index.map(to_date)
         return df
 
 
