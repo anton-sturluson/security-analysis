@@ -60,6 +60,7 @@ for sarg in sys.argv[1:]:
 
     if sarg.startswith("--force-summary"):
         force_summary = True
+        schedule_crawler = False
 
     if sarg.startswith("--k="): # for testing real data
         k = int(sarg.split("=")[1])
@@ -120,10 +121,12 @@ def crawl_summary_helper(symbols):
 def crawl_summary(symbols):
     if __name__ == "__main__":
         jobs = []
-        for i in range(0, n := len(symbols), k := n // cpu_count()):
+        k = cpu_count()
+        for i in range(k):
             jobs.append(Process(target=crawl_summary_helper,
-                                args=(symbols[i : min(i + k, n)],)))
+                                args=(symbols[i:len(symbols):k],)))
             jobs[-1].start()
+            time.sleep(10)
         while jobs:
             jobs.pop().join()
 
