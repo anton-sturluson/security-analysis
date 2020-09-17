@@ -1,5 +1,6 @@
 import sys
 import time
+import argparse
 import traceback
 from datetime import datetime
 from os import cpu_count, path
@@ -33,46 +34,6 @@ def create_profile():
         tools.mv(PROFILEPATH, PROFILEBACKPATH)
     df.sort_values("Symbol").to_csv(PROFILEPATH, index=False) # save
 
-# switches
-init = False
-debug = False # run with first 5 symbols
-schedule_crawler = True
-override_profile = False
-preprocess_only = False
-force_summary = False
-k = None
-headless = True
-crawl_profile_info = False
-for sarg in sys.argv[1:]:
-    if sarg.startswith("--debug"):
-        debug = True
-
-    if sarg.startswith("--init"): # coerce init mode
-        init = True
-
-    if sarg.startswith("--no-schedule"):
-        schedule_crawler = False
-
-    if sarg.startswith("--override-profile"):
-        override_profile = True
-
-    if sarg.startswith("--preprocess-only"):
-        preprocess_only = True
-        schedule_crawler = False
-
-    if sarg.startswith("--force-summary"):
-        force_summary = True
-        schedule_crawler = False
-
-    if sarg.startswith("--k="): # for testing real data
-        k = int(sarg.split("=")[1])
-
-    if sarg.startswith("--no-headless"):
-        headless = False
-
-    if sarg.startswith("--profile-info"):
-        crawl_profile_info = True
-
 
 def try_crawl(crawl_fn, symbol, fn_name):
     try:
@@ -83,7 +44,7 @@ def try_crawl(crawl_fn, symbol, fn_name):
 
 
 def download_historical_data(symbols):
-    if not preprocess_only:
+    if not process_only:
         # Initialize driver
         driver = ChromeDriver(init, debug, headless)
 
@@ -137,6 +98,40 @@ def crawl_profile_info_helper(symbols):
     return res
 
 
+def parse_args():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--init", action="store_true", dest="init",
+                       help="Run initial crawling")
+    parser.add_argument("--debug", action="store_true", dest="debug",
+                       help="Run crawler in debug mode")
+    parser.add_argument("--no-schedule", action="store_true", dest="no_schedule",
+                       help="Schedule automatic crawling")
+    parser.add_argument("--override-profile", action="store_true", dest="override_profile",
+                       help="Override stock_profile.csv")
+    parser.add_argument("--process-only", action="store_true", dest="process_only",
+                       help="Skip crawling")
+    parser.add_argument("--force-summary", action="store_true", dest="force_summary",
+                       help="Run crawler to get summary.csv")
+    parser.add_argument("--k", action="store", default=None, dest="k",
+                       help="Select number of symbols to crawl")
+    parser.add_argument("--no-headless", action="store_true", dest="no_headless",
+                       help="Run crawler in headless mode")
+    parser.add_argument("--profile-info", action="store_true", dest="profile_info",
+                       help="Crawl profile info")
+    return parser.parse_args()
+
+parser = parse_args()
+# switches
+init = parser.init
+debug = parser.debug # run with first 5 symbols
+schedule_crawler = not parser.no_schedule
+override_profile = parser.override_profile
+process_only = parser.process_only
+force_summary = parser.force_summary
+k = parser.k
+headless = not parser.no_headless
+profile_info = parser.profile_info
+
 if __name__ == "__main__":
     tools.log("=" * 42, debug)
     today = datetime.today()
@@ -152,9 +147,8 @@ if __name__ == "__main__":
     if not path.exists(PROFILEPATH) or override_profile:
         create_profile()
 
-    if crawl_profile_info:
+    if profile_info:
         res = crawl_profile_info_helper(symbols)
-        print(res)
         pd.DataFrame(res).to_csv("tmp.csv")
         if override_profile:
             # store stock and currency information in stock_profile.csv
@@ -163,7 +157,7 @@ if __name__ == "__main__":
             profiledf["Currency"] = res["Currency"]
             profiledf.to_csv(PROFILEPATH, index=False)
 
-    if init or preprocess_only:
+    if init or process_only:
         download_historical_data(symbols)
         init = False
 
