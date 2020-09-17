@@ -1,8 +1,9 @@
 import sys
 import time
+import traceback
 from datetime import datetime
-from functools import partial
 from os import cpu_count, path
+
 from multiprocessing import Process
 
 import schedule
@@ -41,6 +42,7 @@ preprocess_only = False
 force_summary = False
 k = None
 headless = True
+crawl_profile_info = False
 for sarg in sys.argv[1:]:
     if sarg.startswith("--debug"):
         debug = True
@@ -68,12 +70,16 @@ for sarg in sys.argv[1:]:
     if sarg.startswith("--no-headless"):
         headless = False
 
+    if sarg.startswith("--profile-info"):
+        crawl_profile_info = True
+
 
 def try_crawl(crawl_fn, symbol, fn_name):
     try:
         crawl_fn(symbol)
     except Exception as e:
         tools.log(f"[{symbol}] Failure crawling {fn_name}: {e}", debug)
+        traceback.print_exc()
 
 
 def download_historical_data(symbols):
@@ -102,13 +108,6 @@ def download_historical_data(symbols):
         tools.log("Failed results:", debug)
         tools.json_dump(driver.results, debug)
 
-        if init:
-            # store stock and currency information in stock_profile.csv
-            profiledf = pd.read_csv(PROFILEPATH)
-            profiledf["Stock"] = driver.stocks
-            profiledf["Currency"] = driver.currencys
-            profiledf.to_csv(PROFILEPATH, index=False)
-
     init_process(symbols, init, debug)
 
 
@@ -131,6 +130,13 @@ def crawl_summary(symbols):
             jobs.pop().join()
 
 
+def crawl_profile_info_helper(symbols):
+    driver = ChromeDriver(init, debug, headless)
+    res = driver.crawl_profile_info(symbols)
+    driver.quit()
+    return res
+
+
 if __name__ == "__main__":
     tools.log("=" * 42, debug)
     today = datetime.today()
@@ -138,13 +144,24 @@ if __name__ == "__main__":
     tools.log(f"Starting crawler ({debug=}) - {today:%Y-%m-%d:%H-%M-%S}", debug)
     tools.log("=" * 42, debug)
 
-    symbols = tools.get_symbols(stock_only=False if init else True)
+    symbols = tools.get_symbols(stock_only=False if override_profile else True)
     if k or debug:
+        k = k if k else 5
         symbols = symbols[len(symbols)-k:len(symbols)]
 
     if not path.exists(PROFILEPATH) or override_profile:
         create_profile()
-        init = True
+
+    if crawl_profile_info:
+        res = crawl_profile_info_helper(symbols)
+        print(res)
+        pd.DataFrame(res).to_csv("tmp.csv")
+        if override_profile:
+            # store stock and currency information in stock_profile.csv
+            profiledf = tools.path2df(PROFILEPATH)
+            profiledf["Stock"] = res["Stock"]
+            profiledf["Currency"] = res["Currency"]
+            profiledf.to_csv(PROFILEPATH, index=False)
 
     if init or preprocess_only:
         download_historical_data(symbols)
