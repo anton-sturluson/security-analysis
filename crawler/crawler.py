@@ -1,6 +1,4 @@
 import time
-import traceback
-from os import path, cpu_count
 from collections import defaultdict
 
 import pandas as pd
@@ -198,6 +196,17 @@ class ChromeDriver:
         return False
 
 
+    def get_currency(self):
+        tmp = WebDriverWait(self.driver, self.timeout).until(
+            EC.visibility_of_element_located((
+                By.CSS_SELECTOR,
+                "section[data-test='qsp-financial']>div>span>span"))).text
+        if "." in tmp:
+            tmp = tmp.split(".")[0].split(" ") # split first sentence
+            return tmp[2] if len(tmp) == 3 else None
+        return "USD"
+
+
     def finished(self, result):
         """Return True if all elements in result is True else False."""
         return sum(result) == len(result)
@@ -205,7 +214,6 @@ class ChromeDriver:
 
     def exist(self, symbol):
         """Return True if symbol exists, else False."""
-        res = False
         self.driver.get(summaryurl(symbol)) # check Summary section
         try:
             WebDriverWait(self.driver, self.timeout).until(
@@ -215,12 +223,11 @@ class ChromeDriver:
 
         except TimeoutException:
             self.last_symbol_is_stock = self.is_stock()
-            res = True
+            return True
 
         else:
             self.sleep()
-
-        return res
+            return False
 
 
     def mv_downloaded(self, symbol, from_, to_):
@@ -469,16 +476,6 @@ class ChromeDriver:
                 ).click()
             self.sleep(3) # wait to download
 
-        def get_currency():
-            tmp = WebDriverWait(self.driver, self.timeout).until(
-                EC.visibility_of_element_located((
-                    By.CSS_SELECTOR,
-                    "section[data-test='qsp-financial']>div>span>span"))).text
-            if "." in tmp:
-                tmp = tmp.split(".")[0].split(" ") # split first sentence
-                return tmp[2] if len(tmp) == 3 else None
-            return "USD"
-
         if self.last_symbol_is_stock:
             # [Income Statement, Balance Sheet, Cash Flow]
             result = [False, False, False]
@@ -489,7 +486,7 @@ class ChromeDriver:
                     if self.init or self.debug:
                         try:
                             self.driver.get(incomestatementurl(symbol))
-                            self.currency_of_last_symbol = get_currency()
+                            self.currency_of_last_symbol = self.get_currency()
 
                             if not path.exists(tools.get_path(name, symbol)):
                                 click_quarterly_and_download()
@@ -638,4 +635,27 @@ class ChromeDriver:
         self.sleep()
 
 
+    def crawl_profile_info(self, symbols):
+        """Crawl 'Stock' and 'Currency' columns in stock_profile.csv."""
+        res = defaultdict(list)
+        for symbol in symbols:
+            if self.exist(symbol):
+                try:
+                    # crawl 'Stock' column
+                    is_stock = self.is_stock()
+                    self.sleep(3)
+                    # crawl 'Currency' column
+                    self.driver.get(incomestatementurl(symbol))
+                    currency = self.get_currency()
+                    self.sleep(3)
+
+                except:
+                    res["Stock"].append(False)
+                    res["Currency"].append(None)
+
+                else:
+                    res["Stock"].append(is_stock)
+                    res["Currency"].append(currency)
+
+        return res
 
