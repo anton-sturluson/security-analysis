@@ -184,17 +184,22 @@ class ChromeDriver:
 
     def is_stock(self):
         """Return True if corresponding symbol is a stock else False."""
-        # wait until sections are visible
-        WebDriverWait(self.driver, self.timeout).until(
-            EC.visibility_of_all_elements_located((
-                By.CSS_SELECTOR,
-                "div[id='quote-nav']>ul>li")))
-        for section in self.driver.find_elements_by_css_selector(
-                "div[id='quote-nav']>ul>li"):
-            if "Financials" in section.text:
-                return True
+        try:
+            # wait until sections are visible
+            WebDriverWait(self.driver, self.timeout).until(
+                EC.visibility_of_all_elements_located((
+                    By.CSS_SELECTOR,
+                    "div[id='quote-nav']>ul>li")))
+            for section in self.driver.find_elements_by_css_selector(
+                    "div[id='quote-nav']>ul>li"):
+                if "Financials" in section.text:
+                    return True
 
-        return False
+        except TimeoutException:
+            return None
+
+        else:
+            return False
 
 
     def get_currency(self):
@@ -638,8 +643,9 @@ class ChromeDriver:
 
     def crawl_profile_info(self, symbols):
         """Crawl 'Stock' and 'Currency' columns in stock_profile.csv."""
-        res = defaultdict(list)
-        for symbol in symbols:
+        data = {"Stock" : [False for _ in range(len(symbols))],
+                "Currency" : [None for _ in range(len(symbols))]}
+        for i, symbol in enumerate(symbols):
             if self.exist(symbol):
                 try:
                     # crawl 'Stock' column
@@ -651,12 +657,11 @@ class ChromeDriver:
                     self.sleep(3)
 
                 except:
-                    res["Stock"].append(False)
-                    res["Currency"].append(None)
+                    pass
 
                 else:
-                    res["Stock"].append(is_stock)
-                    res["Currency"].append(currency)
+                    data["Stock"][i] = is_stock
+                    data["Currency"][i] = currency
 
-        return res
+        return data
 

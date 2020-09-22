@@ -50,7 +50,7 @@ def rm(path):
 def to_csv(df, outpath, index=True):
     if df is not None:
         n = len(splitted := outpath.split("/"))
-        if not path.exists(outdir := path.join(*splitted[:n - 1])):
+        if n > 1 and not path.exists(outdir := path.join(*splitted[:n - 1])):
             mkdir(outdir)
         df.to_csv(outpath, index=index)
 

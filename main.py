@@ -155,7 +155,7 @@ if __name__ == "__main__":
             profiledf = tools.path2df(PROFILEPATH)
             profiledf["Stock"] = res["Stock"]
             profiledf["Currency"] = res["Currency"]
-            profiledf.to_csv(PROFILEPATH, index=False)
+            tools.to_csv(profiledf, PROFILEPATH, index=False)
 
     if init or process_only:
         download_historical_data(symbols)
